@@ -1,0 +1,934 @@
+---
+title: "Cyclistic Marketing Strategy"
+author: "Howard Masekesa"
+date: "2025-08-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This report will document how Cyclistic can increase its subscriber numbers by looking into its past data, and generating insights into consumer behaviour that can be translated into increased subscriber count.
+
+As a junior data analyst, I will begin by looking at the data and going through the steps in the data analysis process. Those steps are: 
+
+* Ask
+* Prepare 
+* Process 
+* Analyze 
+* Share, and 
+* Act.
+
+## Ask
+
+Three guiding questions to help steer the objective in the right way are:
+
+* How do annual members and casual riders use Cyclistic bikes differently?
+* Why would casual riders buy Cyclistic annual memberships?
+* How can Cyclistic use digital media to influence casual riders to become members?
+
+The question I will be answering is: How do annual members and casual
+riders use Cyclistic bikes differently?
+
+In answering this question, we will observe the following:
+
+* A description of all data sources used.
+* Process used for data cleaning, wrangling, and manipulation.
+* A summary of the data
+* Visualizations of the data.
+* A summary of my analysis
+* Recommendations for increasing subscriber count.
+
+## Prepare
+
+To prepare the site i was going to be working in, RStudio, I began by installing the relevant packages I would need:
+
+```{r install packages, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(janitor)
+library(ggmap)
+library(geosphere)
+library(ggplot2)
+library(dplyr)
+
+```
+
+
+For the project, I used Cyclistic’s historical trip data. 
+
+To begin the process, I imported the datasets for the Q1, Q2, Q3, Q4 2019 bike data I would be analysing (first-hand data). The data was collected, stored, and protected by Cyclistic in a secure company database.
+```{r import data}
+data_Q1 <- read_csv("original_dataset/Divvy_Trips_2019_Q1.csv")
+data_Q2 <- read_csv("original_dataset/Divvy_Trips_2019_Q2.csv")
+data_Q3 <- read_csv("original_dataset/Divvy_Trips_2019_Q3.csv")
+data_Q4 <- read_csv("original_dataset/Divvy_Trips_2019_Q4.csv")
+
+```
+
+From the column specification, I noticed that the column names for the datasets were not all identical. I can confirm this by pulling out the column names for each dataset and calling the structure of each column. I will use this to identify if there are any inconsistencies with the column name and the formatting of each column name 
+```{r colname}
+colnames(data_Q1)
+colnames(data_Q2)
+colnames(data_Q3)
+colnames(data_Q4)
+
+```
+
+```{r str, eval=FALSE}
+str(data_Q1)
+str(data_Q2)
+str(data_Q3)
+str(data_Q4)
+```
+
+
+From the output, I would need to change the Q2 data column names before I can merge them into one table.
+
+## Process
+
+The process stage will begin with changing the Q2 column names as described above, and merging  all four datasets to create a yearly dataset for the number of trips taken.
+
+```{r merge datasets}
+colnames(data_Q2) <- c("trip_id", "start_time", "end_time", "bikeid", "tripduration", "from_station_id", "from_station_name", "to_station_id", "to_station_name", "usertype", "gender", "birthyear")
+
+trip_data <- bind_rows(data_Q1, data_Q2, data_Q3, data_Q4)
+
+```
+
+I can now verify the accuracy of my new table by calling its column names and structure as previously done as well as obtaining a statistical summary of the new table
+
+```{r verify dataset}
+colnames(trip_data)
+str(trip_data)
+summary(trip_data)
+
+```
+These are the descriptions of the 12 columns:
+
+1. trip_id: Unique identifier for each trip taken
+
+2. start_time: Time stamp indicating when the ride started.
+
+3. end_time: Time stamp indicating when the ride ended.
+
+4. bikeid: Unique identifier for each bike.
+
+5. tripduration: Duration of the ride in seconds.
+
+6. from_station_id: Unique identifier for the starting station.
+
+
+7. from_station_name: Name of the station where the ride originated.
+
+8. to_station_id: Unique identifier for the ending station.
+
+9. to_station_name: Name of the station where the ride concluded.
+
+10. usertype: Classification of the rider as a subscriber or a customer.
+
+11. gender: Classification of the rider as either male or female.
+
+12. birthyear: Year of birth of each rider. 
+
+
+From the new table description, 3,818,004 rows and 12 unique columns were identified, which equal to the sum of the rows from Q1, Q2, Q3, and Q4 datasets. This confirms that all rows were imported into the new table. The new table also has 12 column, confirming that no entry mistakes were made when changing the Q2 column names. 
+
+The next phase of the process step can take place, which begins by ensuring that:
+
+* No entries have whitespaces,
+* All ride id’s had exactly 8 characters.
+* Removing any rows with NULL values
+
+These checks were completed in Google Sheets using data cleanup functions before merging of the datasets. However, as a final check to ensure all rows entirely with NUll, "", and 0 values were filtered out I utilised the follwing:
+
+```{r NULL values check}
+trip_data_clean <- trip_data[!(trip_data$tripduration <= 0),]
+trip_data_cleaned_2 <- trip_data_clean[!(trip_data_clean$tripduration >= 86400),]
+sum(apply(trip_data_cleaned_2, 1, function(row) all(is.na(row) | row == "" | row == 0)))
+
+
+is_empty_row <- apply(trip_data_cleaned_2, 1, function(row) {
+  row_char <- as.character(row)
+  all(is.na(row) | row_char == "" | row_char == "0" | tolower(row_char) %in% c("na", "null"))
+})
+
+sum(is_empty_row)
+str(trip_data_cleaned_2)
+```
+Since all codes executed 0, I was confident that my table did not contain any empty rows. 
+
+
+The next phase is to remove trips taken that are negative and trips taken that are more than 24 hours:
+```{r removing trips less than 0 hours}
+trip_data_clean <- trip_data[!(trip_data$tripduration <= 0),]
+```
+
+```{r removing trips more than 24 hours}
+trip_data_cleaned_2 <- trip_data_clean[!(trip_data_clean$tripduration >= 86400),]
+```
+
+
+
+Following these steps, it was necessary to ascertain ride information on particular days, months, and times for a more thorough analysis. Thus, it was imperative to:
+
+* Remove duplicates,
+* Create a new column for ‘day_of_week’
+* Create a new column for ‘month’ 
+* Create a new column for 'time'
+* Create a new column for 'season'
+
+
+```{r adding relevant columns}
+trip_data_cleaned_2 <- trip_data_cleaned_2 %>% 
+  distinct() %>% 
+  mutate(tripduration = tripduration/60) %>% 
+  mutate(year = format(as.Date(start_time), "%Y")) %>% 
+  mutate(month = format(as.Date(start_time), "%B")) %>% 
+  mutate(day_of_week = format(as.Date(start_time), "%A")) %>% 
+  mutate(time = strftime(start_time, "%H")) %>% 
+  mutate(age=2019 - birthyear) %>% 
+  mutate(
+    month_num = month(start_time),  # extract numeric month
+    season = case_when(
+      month_num %in% c(12, 1, 2)  ~ "Winter",
+      month_num %in% c(3, 4, 5)   ~ "Spring",
+      month_num %in% c(6, 7, 8)   ~ "Summer",
+      month_num %in% c(9, 10, 11) ~ "Autumn"
+    )
+  ) %>% 
+  select(-month_num)
+
+```
+
+The last step on the process stage is to remove any outliers in the remaining data. This was done by using the z score to filter out tripduration data that fell outside of 3 standard deviations from the mean. 
+
+```{r removing outliers}
+no_outliers <- trip_data_cleaned_2[sapply(trip_data_cleaned_2, is.numeric)]
+z_scores <- scale(trip_data_cleaned_2$tripduration) 
+no_outliers_data <- abs(z_scores) <= 3
+trip_data_cleaned_3 <- trip_data_cleaned_2[no_outliers_data, ]
+```
+
+
+From the processing stage, we are now able to analyse 98.9% of the original data; data that has been cleaned, manipiulated, transformed, organised, formatted, and wrangled.
+
+
+## Analysis
+
+Now that the data is ready we can now analyse by:
+
+* Conducting descriptive analysis.
+* Performing calculations.
+* Identifying trends and relationships
+* Concluding with a summary of the analysis.
+
+We will begin by conducting descriptive analysis and ascertain the mean, maximum, minimum, and median trip durations.
+
+```{r descriptive statistics}
+trip_data_cleaned_3 %>% 
+  summarise(average_tripduration=mean(tripduration), median_tripduration=median(tripduration),
+            max_tripduration=max(tripduration), min_tripduration=min(tripduration))
+
+```
+
+NOTE: trip duration are in minutes
+
+The data above shows trip duration for the year 2019. The average trip duration lasted approx. 17 minutes, while the median trip duration lasted approx. 12 minutes. This suggests a right-skewed data (as shown below), and as such, further analysis may be done in comparison with the median and not the mean. 
+
+```{r data skew, echo=FALSE}
+ggplot(data=trip_data_cleaned_3) + geom_histogram(mapping = aes(x=tripduration),
+          fill = "blue",color="black", bins = 50) + labs(title = "Distribution of tripduration", x="tripduration (minutes)",
+                                                         y="Frequency")
+
+```
+
+
+Even after filtering out outliers, the maximum trip duration lasted just over 2 hours. Further analysis will need to be conducted to determine the the reason for this.
+
+### **Ride Analysis**
+
+#### Usertypes
+
+For the first analysis, we will analyze the distribution of how many trips each usertype has taken.
+
+
+
+```{r pie chart by usertype, echo=FALSE}
+usertype_count <- trip_data_cleaned_3 %>% 
+  count(usertype)
+
+usertype_count <- usertype_count %>% 
+  mutate(percent = round(n / sum(n) * 100,1),
+         label = paste0(usertype, "\n", percent, "%"), 
+         ypos = cumsum(n) - 0.5 * n)
+
+ggplot(usertype_count, aes(x = "", y = n, fill = usertype)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 4) +
+  theme_void() +
+  labs(title = "User Type Distribution") +
+  scale_fill_brewer(palette = "Set1")
+
+```
+
+From the pie chart, we can see that during 2019, subscribers accounted for 77.6% of all rides, while customers accounted for 22.4%.
+
+Next we analyse the descriptive statistics by user type to gain a better understanding of the duration of trips taken by each user type
+
+```{r descriptive user types, echo=FALSE}
+trip_data_cleaned_3 %>% 
+  group_by(usertype) %>% 
+  summarise(average_tripduration=mean(tripduration), median_tripduration=median(tripduration))
+
+```
+From the table above, we notice that regular customers took bikes for longer rides (25 minutes) than subscribers (10 minutes), as the median trip duration for customers is lower than the median trip duration for subscribers.
+
+The median trip duration for each usertype is much lower than the average trip duration, suggesting that the data for each usertype is right-skewed - confirming that the overall data is right-skewed.
+
+
+
+### Total Trip Duration Analysis
+
+Due to the vast number of trips taken (over 3 million in 2019), we will find out the ride activity for both usertypes across different timelines. We will group each time-frame by usertype.
+
+NOTE: For these analyses, we will use the median trip duration as it is a better measure of central tendency for skewed data. 
+
+
+```{r total rides by month per usertype,echo=FALSE}
+
+trip_data_cleaned_3$month <- factor(trip_data_cleaned_3$month, levels = c(
+  "January", "February", "March", "April", "May", "June", 
+  "July", "August", "September", "October", "November", "December"
+))
+
+# Prepare the data with percentages
+rides_summary <- trip_data_cleaned_3 %>%
+  group_by(usertype, month) %>%
+  summarise(number_of_rides = n(), .groups = "drop") %>%
+  mutate(total_rides = sum(number_of_rides),
+         percent_of_total = number_of_rides / total_rides * 100)  # percentage within each usertype
+
+
+
+# Plot with percentage labels
+ggplot(rides_summary, aes(x = month, y = number_of_rides, fill = usertype)) +
+  geom_col(width = 0.6, position = position_dodge(width = 0.6)) +
+  geom_text(aes(label = paste0(round(percent_of_total, 1), "%")),
+            position = position_dodge(width = 0.5),
+            vjust = -0.5, size = 2.5) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE), expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Total Rides by Subscribers and Customers vs. Month",
+       x = "Month",
+       y = "Number of Rides",
+       fill = "User Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r total rides by season per usertype,echo=FALSE}
+
+# Prepare the data with percentages
+rides_summary <- trip_data_cleaned_3 %>%
+  group_by(usertype, season) %>%
+  summarise(number_of_rides = n(), .groups = "drop") %>%
+  mutate(total_rides = sum(number_of_rides),
+         percent_of_total = number_of_rides / total_rides * 100)  # percentage within each usertype
+
+# Plot with percentage labels
+ggplot(rides_summary, aes(x = season, y = number_of_rides, fill = usertype)) +
+  geom_col(width = 0.8, position = position_dodge(width = 0.8)) +
+  geom_text(aes(label = paste0(round(percent_of_total, 1), "%")),
+            position = position_dodge(width = 0.5),
+            vjust = -0.5, size = 3) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE), expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Total Rides by Subscribers and Customers vs. Season",
+       x = "Season",
+       y = "Number of Rides",
+       fill = "User Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r total rides by day of week per usertype, echo=FALSE}
+
+
+
+# Prepare the data with percentages
+rides_summary <- trip_data_cleaned_3 %>%
+  group_by(usertype, day_of_week) %>%
+  summarise(number_of_rides = n(), .groups = "drop") %>%
+  mutate(total_rides = sum(number_of_rides),
+         percent_of_total = number_of_rides / total_rides * 100)  # percentage within each usertype
+
+rides_summary$day_of_week <- factor(rides_summary$day_of_week,
+                                    levels = c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                                               "Friday", "Saturday", "Sunday"))
+
+# Plot with percentage labels
+ggplot(rides_summary, aes(x = day_of_week, y = number_of_rides, fill = usertype)) +
+  geom_col(width = 0.8, position = position_dodge(width = 0.8)) +
+  geom_text(aes(label = paste0(round(percent_of_total, 1), "%")),
+            position = position_dodge(width = 0.5),
+            vjust = -0.5, size = 3) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE), expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Total Rides by Subscribers and Customers vs. Day of Week",
+       x = "Day of Week",
+       y = "Number of Rides",
+       fill = "User Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r total rides by time per usertype, echo=FALSE}
+# Prepare the data with percentages
+rides_summary <- trip_data_cleaned_3 %>%
+  group_by(usertype, time) %>%
+  summarise(number_of_rides = n(), .groups = "drop") %>%
+  mutate(total_rides = sum(number_of_rides),
+         percent_of_total = number_of_rides / total_rides * 100)  # percentage within each usertype
+
+
+# Plot with percentage labels
+ggplot(rides_summary, aes(x = time, y = number_of_rides, fill = usertype)) +
+  geom_col(width = 0.8, position = position_dodge(width = 0.8)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE), expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Total Rides by Subscribers and Customers vs. Time",
+       x = "Time",
+       y = "Number of Rides",
+       fill = "User Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r total rides by usertype, time, and day of week, echo=FALSE}
+trip_data_cleaned_3$day_of_week <- factor(trip_data_cleaned_3$day_of_week,
+                                          levels = c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                                                     "Friday", "Saturday", "Sunday"),
+                                          ordered = TRUE)
+trip_data_cleaned_3 %>%
+    ggplot(aes(time, fill=usertype)) +
+    geom_bar() +
+    labs(x="Hour of the day", y="Number of Rides",title="Total rides per hour by day of the week") +
+    facet_wrap(~ day_of_week) + theme_minimal() + theme(axis.text.x = element_blank())
+
+```
+
+
+
+
+* From the data, August emerges as the busiest month, amounting to 15.4% of the yearly total. Subscribers lead this period, accounting for 69% of August trips. Conversely, February records the lowest activity with 2.6% of yearly trips. July and August stand out as Customers' preferred month, with 4.4% and 4.7% of the yearly total respectively. January and February see a significant difference in trips between Subscribers and Customers, with Subscribers accounting for about 96% of that month's trips. Intuitively, this makes sense as Customers would not opt to use bikes during winter, whereas Subscribers may feel the obligation to use bikes seeing that they already have a membership. Subscriber total monthly rides are higher throughout the year.
+
+* Both Subscribers and Customers ride more frequently in summer and less in winter, with total rides taken in Summer accounting for 42.4% of total trips.
+
+* Both Subscribers and Customers took consistent trips throughout the weekday. Divergence occurs as we approach the weekend, where Subscribers tend to not take as many trips and Customers ramping up their bike usage. This suggests a preference for weekday trips for Subscribers and weekend trips for Customers. 
+
+* Peak riding hours are between 16:00 and 19:00 for Subscribers and Customers, with the highest activity at 18:00. Conversely, minimal activity is recorded between 2:00 and 5:00.There is a notable increase in Subscriber activity between 6:00 and 10:00, possibly due to Subscribers mainly using Cyclistic bikes to travel to and from consistent loactions (e.g work, school, train station) 
+
+* There is a big increase in the volume of rides during the weekdays between 6:00 and 10:00 and another volume increase from 16:00 to 19:00. This likely confirms the theory that subscribers use the bikes as transportation. Weekends tell a different story. Saturday's and Sunday's see more ride volumes during the afternoon to early evening, suggesting that users (customers in particular) mostly use bikes for leisure activity.
+
+
+
+### Median Trip Duration Analysis
+
+The next part of our analysis will involve delving into the median trip duration taken by subscribers and customers. This will give us insight into how long each usertype normally spends when riding. This analysis can be used on conjuction with pricing analysis to determine optimal weekday, weekend pricing for customers.
+
+
+
+
+```{r median monthly trip duration per usertype, echo=FALSE}
+# Ensure months are in order
+trip_data_cleaned_3$month <- factor(trip_data_cleaned_3$month, levels = c(
+  "January", "February", "March", "April", "May", "June", 
+  "July", "August", "September", "October", "November", "December"
+))
+
+
+trip_data_cleaned_3 %>%  
+  group_by(usertype, month) %>% 
+  summarise(median_tripduration = median(tripduration), .groups="drop") %>%
+  ggplot(aes(x = month, y = median_tripduration, fill = usertype)) +
+  geom_col(width=0.5, position = position_dodge(width=0.5)) + 
+  labs(title ="Median Trip Duration by Subscribers and Customers  Vs. Month (minutes)", x="Month", y="Median Trip Duration") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+```
+
+
+```{r median trip duration by season, echo=FALSE}
+trip_data_cleaned_3 %>%  
+  group_by(usertype, season) %>% 
+  summarise(median_tripduration = median(tripduration), .groups="drop") %>%
+  ggplot(aes(x = season, y = median_tripduration, fill = usertype)) +
+  geom_col(width=0.5, position = position_dodge(width=0.5)) + 
+  labs(title ="Median Trip Duration by Subscribers and Customers  Vs. Season (minutes)", x="Season", y="Median Trip Duration") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+```
+
+```{r median trip duration by day of week, echo=FALSE}
+trip_data_cleaned_3 %>%  
+  group_by(usertype, day_of_week) %>% 
+  summarise(median_tripduration = median(tripduration), .groups="drop") %>%
+  ggplot(aes(x = day_of_week, y = median_tripduration, fill = usertype)) +
+  geom_col(width=0.5, position = position_dodge(width=0.5)) + 
+  labs(title ="Median Trip Duration by Subscribers and Customers  Vs. Day of Week (minutes)", x="Day of Week", y="Median Trip Duration") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45,hjust = 1))
+```
+
+
+
+```{r median trip duration by time, echo=FALSE}
+trip_data_cleaned_3 %>%  
+  group_by(usertype, time) %>% 
+  summarise(median_tripduration = median(tripduration), .groups="drop") %>%
+  ggplot(aes(x = time, y = median_tripduration, fill = usertype)) +
+  geom_col(width=0.5, position = position_dodge(width=0.5)) + 
+  labs(title ="Median Trip Duration by Subscribers and Customers  Vs. Time (minutes)", x="Time", y="Median Trip Duration") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+```
+
+
+```{r median trip duration by time and day of week, echo=FALSE}
+
+trip_data_cleaned_3$day_of_week <- factor(trip_data_cleaned_3$day_of_week,
+                                          levels = c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                                                     "Friday", "Saturday", "Sunday"),
+                                          ordered = TRUE)
+
+median_duration <- trip_data_cleaned_3 %>%
+  group_by(usertype, day_of_week, time,) %>%
+  summarise(median_duration = median(tripduration, na.rm = TRUE), .groups = "drop")
+
+
+ggplot(data = median_duration, aes(x = time, y = median_duration, fill = usertype)) +
+  geom_col(position = "stack") +
+  facet_wrap(~ day_of_week) +
+  labs(
+    title = "Median Trip Duration per Hour by Day of the Week (minutes)",
+    x = "Hour of the Day",
+    y = "Median Trip Duration",
+    fill = "User Type"
+  ) +
+  theme_minimal() + theme(axis.text.x = element_blank())
+
+
+```
+
+
+
+* The median trip duration for Subscribers is somewhat constant around 10 minutes throughout the year. Customers' median trip duration oscillates between 15 and 30 minutes throughout the year, exhibiting greater volatility.
+
+* Earlier, we noticed that both subscribers and customers dramatically reduce their bike usage during winter. Looking at the median trip duration time, we see that although theres a significant drop in usage, the median time taken to complete a trip does not drop as would be expected. 
+
+* Similarly, athough we see customers' peak bike usage in the summer, the median trip duration peaks in spring. 
+
+* Weekend median trip duration is higher for both subscribers and customers.
+
+
+It’s evident that customers exhibit higher median values and volatility compared to subscribers throughout all time frames. 
+
+### Age Analysis
+
+```{r filter out young and old users, echo=FALSE}
+
+trip_data_cleaned_3 <- trip_data_cleaned_3 %>%
+  filter(!is.na(age), age > 10, age < 100)
+
+summary(trip_data_cleaned_3$age)
+
+ggplot(trip_data_cleaned_3, aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Age Distribution of Riders",
+       x = "Age",
+       y = "Count") +
+  theme_minimal()
+
+```
+
+
+The majority of Cyclistic users tend to be younger with the median age being 32 (as of 2019). 
+
+
+```{r age distribution by usertype, echo=FALSE}
+
+trip_data_cleaned_3 <- trip_data_cleaned_3 %>%
+  mutate(age_group = cut(
+    age,
+    breaks = c(15, 25, 35, 45, 60, 100),
+    labels = c("15–25", "26–35", "36–45", "46–60", "61+"),
+    right = TRUE
+  ))
+
+age_group_summary <- trip_data_cleaned_3 %>%
+  group_by(age_group) %>%
+  summarise(trips = n(), .groups = "drop")
+
+print(age_group_summary)
+
+ggplot(trip_data_cleaned_3, aes(x = age, fill = usertype)) +
+  geom_histogram(binwidth = 5, position = "stack", color = "black") +
+  labs(title = "Age Distribution by User Type",
+       x = "Age",
+       y = "Count") +
+  theme_minimal()
+
+
+
+age_usertype_summary <- trip_data_cleaned_3 %>%
+  group_by(age_group, usertype) %>%
+  summarise(trips = n(), .groups = "drop")
+
+ggplot(age_usertype_summary, aes(x = age_group, y = trips, fill = usertype)) +
+  geom_col(position = "dodge") +
+  labs(title = "Trips by Age Group and User Type",
+       x = "Age Group",
+       y = "Number of Trips",
+       fill = "User Type") +
+  theme_minimal()
+
+```
+
+* The majority of users are aged between 15 and 45 years old. This aludes to the Cyclistic users being in education and working class (early careers and experienced professionals).
+
+* The bulk of customers are aged between 15 and 35 years old. 
+
+* The bulk of subscribers are aged between 26 and 35 years old.
+
+
+### Station Analysis by Usertype
+
+We will first identify the top 10 stations used by both subscribers and customers.
+
+```{r top 10 stations for subscribers and customers, echo=FALSE}
+# Identifying top 10 stations by usertype
+
+
+top_stations_by_usertype <- trip_data_cleaned_3 %>%
+  group_by(usertype, from_station_name) %>% 
+  summarise(number_of_rides = n(), .groups = "drop_last") %>%
+  slice_max(order_by = number_of_rides, n = 10) %>%
+  arrange(usertype,desc(number_of_rides)) %>% 
+  ungroup()
+
+print(top_stations_by_usertype)
+```
+
+
+
+Customers mostly start their journey from Streeter Dr & Grand Ave, then Lake Shore Dr & Monroe St, then Millenium Park.
+
+Subscribers mostly start their journey from Canal St & Adams St, followed by Clinton St & Madison St, then Clinton St & Washington Blvd. 
+
+Graphically, the popularity of the top 10 stations for each usertype are shown below. 
+
+
+```{r top 10 station for customer, echo=FALSE}
+top_stations_by_usertype <- trip_data_cleaned_3 %>%
+  group_by(usertype, from_station_name) %>% 
+  summarise(number_of_rides = n(), .groups = "drop_last") %>%
+  slice_max(order_by = number_of_rides, n = 10) %>%
+  arrange(usertype,desc(number_of_rides)) %>% 
+  ungroup()
+
+# Show top stations for customers
+
+top_stations_by_usertype_customer <- top_stations_by_usertype %>% 
+  filter(usertype == "Customer")
+
+# plot customer top 10 stations
+
+ggplot(top_stations_by_usertype_customer, aes(
+  x = fct_reorder(from_station_name, number_of_rides),  # orders by ride count
+  y = number_of_rides,
+  fill = number_of_rides
+)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +  # makes the bars horizontal
+  labs(
+    title = "Top 10 Stations by Customers",
+    x = "Station Name",
+    y = "Number of Rides"
+  ) + scale_fill_gradient(low = "beige", high = "blue") + 
+  theme_minimal()
+```
+
+```{r top 10 station for subscriber, echo=FALSE}
+# Show top 10 station for subscribers
+
+top_stations_by_usertype_subscriberr <- top_stations_by_usertype %>% 
+  filter(usertype == "Subscriber")
+
+# plot customer top 10 stations
+
+ggplot(top_stations_by_usertype_subscriberr, aes(
+  x = fct_reorder(from_station_name, number_of_rides),  # orders by ride count
+  y = number_of_rides,
+  fill = number_of_rides
+)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +  # makes the bars horizontal
+  labs(
+    title = "Top 10 Stations by Subscribers",
+    x = "Station Name",
+    y = "Number of Rides"
+  ) + scale_fill_gradient(low = "beige", high = "blue") +  # Orange to red gradient
+  theme_minimal()
+```
+
+
+After visualising the top 10 stations where users start their journey from, we would next want to identify the top 10 routes that users took during the year. Once we can identify the top 10 routes for each usertype, we can begin to recommend targeted marketing strategies. 
+
+#### Top 10 Customer Routes
+
+```{r top 10 customer routes, echo=FALSE}
+top_customer_routes <- trip_data_cleaned_3 %>%
+  filter(usertype == "Customer") %>%
+  group_by(from_station_name, to_station_name) %>%
+  summarise(number_of_trips = n(), .groups = "drop") %>%
+  arrange(desc(number_of_trips)) %>%
+  slice_head(n = 10)
+
+print(top_customer_routes)
+```
+
+
+#### Top 10 Subscriber routes
+
+```{r filtering top subscriber route, echo=FALSE}
+top_subscriber_routes <- trip_data_cleaned_3 %>%
+  filter(usertype == "Subscriber") %>%
+  group_by(from_station_name, to_station_name) %>%
+  summarise(number_of_trips = n(), .groups = "drop") %>%
+  arrange(desc(number_of_trips)) %>%
+  slice_head(n = 10)
+
+print(top_subscriber_routes)
+```
+
+
+**Usage Patterns by User Type:**
+
+* Subscribers took significantly more trips than Customers.
+
+*The most popular starting stations for Subscribers recorded higher ride volumes than those for Customers.
+
+* The top 10 routes among Subscribers had more trips than the top 10 Customer routes.
+
+This indicates that Subscribers, likely regular commuters, exhibit:
+
+* Higher ride frequency
+
+* Consistent usage of specific stations and routes
+
+#### Top Route Geomapping
+
+I next wanted to find out why the top routes were the the top routes. In order to do that, I needed to map them out to identify if there was anything interesting I could find.
+
+```{r enabling API, include=FALSE}
+register_google("AIzaSyBE-XP366EE7-ij9kMohsY-rE-UeGKzzqE")
+```
+
+```{r top route for each usertype, echo=FALSE}
+top_route_by_usertype <- trip_data_cleaned_3 %>%
+  group_by(usertype, from_station_name, to_station_name) %>%
+  summarise(number_of_trips = n(), .groups = "drop") %>%
+  arrange(usertype, desc(number_of_trips)) %>%
+  group_by(usertype) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+print(top_route_by_usertype)
+```
+
+
+```{r top route by age group and usertype, echo=FALSE}
+
+trip_data_cleaned_3 <- trip_data_cleaned_3 %>%
+  mutate(age = 2019 - birthyear) %>%
+  filter(!is.na(age), age >= 10, age <= 100) %>%
+  mutate(age_group = cut(
+    age,
+    breaks = c(15, 25, 35, 45, 60, 100),
+    labels = c("15–25", "26–35", "36–45", "46–60", "61+"),
+    right = TRUE
+  ))
+
+top_routes <- trip_data_cleaned_3 %>%
+  group_by(usertype, from_station_name, to_station_name) %>%
+  summarise(number_of_trips = n(), .groups = "drop") %>%
+  arrange(usertype, desc(number_of_trips)) %>%
+  group_by(usertype) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+top_routes_by_age <- trip_data_cleaned_3 %>%
+  inner_join(top_routes, by = c("usertype", "from_station_name", "to_station_name")) %>%
+  group_by(usertype, age_group) %>%
+  summarise(route_trips = n(), .groups = "drop") %>%
+  arrange(usertype, desc(route_trips))
+
+
+ggplot(top_routes_by_age, aes(x = age_group, y = route_trips, fill = usertype)) +
+  geom_col(position = "dodge") + facet_wrap(~ usertype)
+  labs(
+    title = "Top Route Usage by Age Group and Usertype",
+    x = "Age Group",
+    y = "Number of Trips"
+  ) +
+  theme_minimal()
+```
+
+
+
+* From the graph above, we notice that the top route for customers were completed mainly by the age groups 15 - 25 and 26-35
+
+* The top route for subscribers were mainly completed by the age groups 36 - 45 and 46 - 60.
+
+```{r create tibble for top route, echo=FALSE}
+# Manually create a tibble of cleaned locations
+stations <- tibble::tibble(
+  station_name = c(
+    "Streeter Dr & Grand Ave",
+    "Lake Shore Dr & Monroe St",
+    "Canal St & Adams St",
+    "Michigan Ave & Washington St"
+  ),
+  address = c(
+    "Streeter Dr and Grand Ave, Chicago, IL",
+    "Lake Shore Dr and Monroe St, Chicago, IL",
+    "Canal St and Adams St, Chicago, IL",
+    "Michigan Ave and Washington St, Chicago, IL"
+  )
+)
+
+```
+
+
+```{r geocode top routes, include=FALSE}
+# Geocode
+geocoded_stations <- stations %>%
+  mutate_geocode(address, output = "latlon", source = "google")
+
+```
+
+```{r geocoded stations, echo=FALSE}
+print(geocoded_stations)
+```
+
+
+```{r create tibble for usertype top route, echo=FALSE}
+routes <- tibble(
+  usertype = c("Customer", "Subscriber"),
+  from = c("Lake Shore Dr & Monroe St", "Canal St & Adams St"),
+  to = c("Streeter Dr & Grand Ave", "Michigan Ave & Washington St")
+)
+
+```
+
+```{r joining coordinates, echo=FALSE}
+routes <- routes %>%
+  left_join(geocoded_stations, by = c("from" = "station_name")) %>%
+  rename(from_lat = lat, from_lon = lon) %>%
+  left_join(geocoded_stations, by = c("to" = "station_name")) %>%
+  rename(to_lat = lat, to_lon = lon)
+```
+
+
+```{r basemap, include=FALSE}
+# Get a basemap centered on Chicago
+chicago_map <- get_map(location = "Chicago, IL", zoom = 13, source = "google", maptype = "roadmap")
+```
+
+```{r mapping popular route by usertype, echo=FALSE}
+
+
+# Plot routes
+ggmap(chicago_map) +
+  geom_segment(data = routes,
+               aes(x = from_lon, y = from_lat, xend = to_lon, yend = to_lat, color = usertype),
+               arrow = arrow(length = unit(0.2, "cm")), linewidth = 1) +
+  geom_point(data = geocoded_stations, aes(x = lon, y = lat), size = 2, color = "black") +
+  geom_text(data = geocoded_stations, aes(x = lon, y = lat, label = station_name), hjust = -0.1, size = 3) +
+  labs(title = "Top Routes by Usertype in Chicago",
+       subtitle = "Customer vs Subscriber",
+       x = "", y = "") +
+  theme_minimal() + theme(axis.text = element_blank())
+```
+
+
+
+* Based on the most popular route for Subscribers, it appears that riders typically travel from the train station located on Canal St & Adam St. This suggests that subscribers may be commuting to and from the work using the train and Cyclistic bikes.
+
+* For customers, the route between Lake Shore Dr & Monroe St Ave and Streeter Dr & Grand Ave indicates travel along the lakefront in downtown Chicago. This may possibly be to enjoy the scenic views of Lake Michigan and for access to downtown tourist attractions.
+
+
+
+## Share
+
+### Main insights and finding conclusions
+
+#### Findings:
+
+* Subscribers hold the largest proportion of the total rides, ~77% of total rides.
+* Subscribers contantly hold larger proportion of total rides throughout the year.
+* Customers have the biggest volume of data on the weekend.
+* The largest volume of riders is in the afternoon.
+* Customer median trip duration is longer than subscribers.
+
+
+#### Insights:
+
+The data suggests that subscribers use bikes for work purposes. This is confirmed by their bike usage in colder months (where there is significant drop in casual members in those months), spikes in ride usage during typical opening and closing work hours through the weekday, and the most popular route emanating from a train station.
+
+
+## Act
+
+To target customers, I would recommend: 
+
+1. Offering a weekend-only subscription at a different price point than the full annual subscription
+
+2. Creating a tiered weekend-only subscription by age group, making the 15 - 25 and 26 - 35 age group prices cheaper than the rest. This will psychologically entice those age groups into thinking they were able to "get a bargain". 
+
+3. Introducing coupons and discounts along with the weekend-only subscription. 
+
+4. Creating and advertising posters/marketing material for the new offerings in the stations that are most used by customers from June to September (most popular months for customers).
+
+Additionally, to retain subscribers, I would recommend:
+
+1. Offering discount on renting bikes for subscribers.
+
+2. Partnering with the transportation council to offer joint discounts to subscribers who use trains and bikes.
+
+
+To assist in pricing analysis for customers, I would suggest:
+
+* Charging on a per minute basis.
+
+## Conclusion
+
+### Summary
+
+We have completed our analysis for Cyclistic. We conducted various data cleaning, manipulation, and wrangling tasks, including investigation, cleaning, removal of extreme outliers, and more. Additionally, we analyzed the distributions of user types, as well as the distribution of trips and trip duration taken across all timeframes. We also examined the distributions of trips across different age groups. Finally, we conducted a geographical analysis to identify the most popular stations and routes for both user types.
+
+### Limitations of the Analysis
+
+The analysis provided is restricted to total, trips taken, minutes and distance only, lacking weather, temperature, and humidity data that could influence trip duration. 
+
+
